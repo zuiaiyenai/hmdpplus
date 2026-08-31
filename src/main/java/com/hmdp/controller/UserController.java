@@ -3,14 +3,18 @@ package com.hmdp.controller;
 
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserDTO;
+import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.time.LocalDate;
 
 /**
  * <p>
@@ -60,6 +64,36 @@ public class UserController {
     @GetMapping("/me")
     public Result me(){
         return Result.ok(UserHolder.getUser());
+    }
+
+    @PostMapping("/sign")
+    public Result sign() {
+        return userService.sign();
+    }
+
+    @PutMapping("/sign")
+    public Result makeUpSign(
+            @RequestParam("date")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return userService.makeUpSign(date);
+    }
+
+    @GetMapping("/sign/count")
+    public Result signCount() {
+        return userService.signCount();
+    }
+
+    @GetMapping("/{id}")
+    public Result queryUserById(@PathVariable("id") Long userId) {
+        User user = userService.getById(userId);
+        if (user == null) {
+            return Result.fail("用户不存在");
+        }
+        UserDTO userDTO = new UserDTO();
+        userDTO.setId(user.getId());
+        userDTO.setNickName(user.getNickName());
+        userDTO.setIcon(user.getIcon());
+        return Result.ok(userDTO);
     }
 
     @GetMapping("/info/{id}")

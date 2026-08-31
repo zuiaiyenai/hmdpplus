@@ -28,7 +28,8 @@ public class MvcConfig implements WebMvcConfigurer {
                         "/shop-type/**",
                         "/voucher/**",
                         "/upload/**",
-                        "/blog/hot"
+                        "/blog/hot",
+                        "/blog/of/shop"
                 )
                 .order(1);
     }

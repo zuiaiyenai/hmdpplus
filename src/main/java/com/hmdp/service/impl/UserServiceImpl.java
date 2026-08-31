@@ -12,12 +12,17 @@ import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
+import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -35,6 +40,8 @@ import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
 @Slf4j
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
+
+    private static final DateTimeFormatter SIGN_KEY_SUFFIX_FORMATTER = DateTimeFormatter.ofPattern(":yyyyMM");
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -91,6 +98,75 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             stringRedisTemplate.delete(LOGIN_USER_KEY + token);
         }
         return Result.ok();
+    }
+
+    @Override
+    public Result sign() {
+        return setSignBit(LocalDate.now(), "今日已签到");
+    }
+
+    @Override
+    public Result makeUpSign(LocalDate date) {
+        if (date == null) {
+            return Result.fail("补签日期不能为空");
+        }
+        if (!date.isBefore(LocalDate.now())) {
+            return Result.fail("只能补签今天之前的日期");
+        }
+        return setSignBit(date, "该日期已签到");
+    }
+
+    @Override
+    public Result signCount() {
+        Long userId = UserHolder.getUser().getId();
+        return Result.ok(countConsecutiveSignDays(userId, LocalDate.now()));
+    }
+
+    int countConsecutiveSignDays(Long userId, LocalDate date) {
+        int count = 0;
+        LocalDate month = date;
+        int daysToRead = date.getDayOfMonth();
+
+        while (true) {
+            List<Long> results = stringRedisTemplate.opsForValue().bitField(
+                    buildSignKey(userId, month),
+                    BitFieldSubCommands.create()
+                            .get(BitFieldSubCommands.BitFieldType.unsigned(daysToRead))
+                            .valueAt(0)
+            );
+            if (results == null || results.isEmpty() || results.get(0) == null) {
+                break;
+            }
+
+            long bitmap = results.get(0);
+            int signedDaysInMonth = 0;
+            while ((bitmap & 1) == 1) {
+                signedDaysInMonth++;
+                bitmap >>>= 1;
+            }
+            count += signedDaysInMonth;
+            if (signedDaysInMonth < daysToRead) {
+                break;
+            }
+
+            month = month.minusMonths(1);
+            daysToRead = month.lengthOfMonth();
+        }
+        return count;
+    }
+
+    private Result setSignBit(LocalDate date, String duplicateMessage) {
+        Long userId = UserHolder.getUser().getId();
+        Boolean signed = stringRedisTemplate.opsForValue().setBit(
+                buildSignKey(userId, date), date.getDayOfMonth() - 1, true);
+        if (Boolean.TRUE.equals(signed)) {
+            return Result.fail(duplicateMessage);
+        }
+        return Result.ok();
+    }
+
+    private String buildSignKey(Long userId, LocalDate date) {
+        return USER_SIGN_KEY + userId + date.format(SIGN_KEY_SUFFIX_FORMATTER);
     }
 
     private User createUserWithPhone(String phone) {

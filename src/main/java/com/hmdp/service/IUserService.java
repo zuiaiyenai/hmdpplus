@@ -5,6 +5,8 @@ import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.User;
 
+import java.time.LocalDate;
+
 /**
  * <p>
  *  服务类
@@ -20,5 +22,11 @@ public interface IUserService extends IService<User> {
     Result login(LoginFormDTO loginForm);
 
     Result logout(String token);
+
+    Result sign();
+
+    Result makeUpSign(LocalDate date);
+
+    Result signCount();
 
 }
