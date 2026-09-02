@@ -2,7 +2,9 @@ package com.hmdp.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.hmdp.dto.LoginFormDTO;
+import com.hmdp.dto.PasswordUpdateDTO;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserProfileUpdateDTO;
 import com.hmdp.entity.User;
 
 import java.time.LocalDate;
@@ -28,5 +30,9 @@ public interface IUserService extends IService<User> {
     Result makeUpSign(LocalDate date);
 
     Result signCount();
+
+    Result updateProfile(UserProfileUpdateDTO profile, String token);
+
+    Result updatePassword(PasswordUpdateDTO passwordUpdate);
 
 }

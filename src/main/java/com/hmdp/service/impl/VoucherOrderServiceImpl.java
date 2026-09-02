@@ -3,15 +3,15 @@ package com.hmdp.service.impl;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
-import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.Voucher;
 import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.VoucherOrderMapper;
-import com.hmdp.service.ISeckillVoucherService;
+import com.hmdp.service.ISeckillAccessTokenService;
 import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.service.IVoucherService;
-import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.service.OrderIdGenerator;
 import com.hmdp.utils.UserHolder;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.core.io.ClassPathResource;
@@ -21,41 +21,35 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Resource;
-import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 
 import static com.hmdp.utils.RedisConstants.LOCK_ORDER_KEY;
-import static com.hmdp.utils.RedisConstants.SECKILL_ORDER_KEY;
-import static com.hmdp.utils.RedisConstants.SECKILL_STOCK_KEY;
 
 /**
  * 优惠券订单服务。
  */
 @Service
+@Slf4j
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder>
         implements IVoucherOrderService {
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
-    private static final DefaultRedisScript<Long> ROLLBACK_SCRIPT;
 
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
-
-        ROLLBACK_SCRIPT = new DefaultRedisScript<>();
-        ROLLBACK_SCRIPT.setLocation(new ClassPathResource("seckill_rollback.lua"));
-        ROLLBACK_SCRIPT.setResultType(Long.class);
     }
 
     @Resource
-    private ISeckillVoucherService seckillVoucherService;
+    private ISeckillAccessTokenService seckillAccessTokenService;
     @Resource
     private IVoucherService voucherService;
     @Resource
     private StringRedisTemplate stringRedisTemplate;
     @Resource
-    private RedisIdWorker redisIdWorker;
+    private OrderIdGenerator orderIdGenerator;
     @Resource
     private RedissonClient redissonClient;
     @Resource
@@ -97,7 +91,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 return Result.fail("不能重复下单");
             }
 
-            long orderId = redisIdWorker.nextId("order");
+            long orderId = orderIdGenerator.nextId();
             try {
                 Boolean created = transactionTemplate.execute(status -> {
                     VoucherOrder order = new VoucherOrder();
@@ -126,20 +120,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Override
     public Result seckillVoucher(Long voucherId) {
+        return seckillVoucher(voucherId, null);
+    }
+
+    @Override
+    public Result seckillVoucher(Long voucherId, String accessToken) {
         if (voucherId == null) {
             return Result.fail("优惠券不存在");
-        }
-
-        SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
-        if (voucher == null) {
-            return Result.fail("优惠券不存在");
-        }
-        LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(voucher.getBeginTime())) {
-            return Result.fail("秒杀尚未开始");
-        }
-        if (now.isAfter(voucher.getEndTime())) {
-            return Result.fail("秒杀已经结束");
         }
 
         UserDTO user = UserHolder.getUser();
@@ -147,87 +134,48 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("请先登录");
         }
         Long userId = user.getId();
-        String stockKey = SECKILL_STOCK_KEY + "{" + voucherId + "}";
-        String orderKey = SECKILL_ORDER_KEY + "{" + voucherId + "}";
-        stringRedisTemplate.opsForValue().setIfAbsent(stockKey, voucher.getStock().toString());
-
-        RLock lock = redissonClient.getLock(LOCK_ORDER_KEY + userId + ":" + voucherId);
-        boolean locked = lock.tryLock();
-        if (!locked) {
-            return Result.fail("请勿重复下单");
-        }
-
+        long orderId = orderIdGenerator.nextId();
+        Long scriptResult;
         try {
-            int orderCount = query()
-                    .eq("user_id", userId)
-                    .eq("voucher_id", voucherId)
-                    .count();
-            if (orderCount > 0) {
-                return Result.fail("不能重复下单");
-            }
-
-            Long scriptResult = stringRedisTemplate.execute(
+            scriptResult = stringRedisTemplate.execute(
                     SECKILL_SCRIPT,
-                    Arrays.asList(stockKey, orderKey),
-                    userId.toString()
+                    Collections.emptyList(),
+                    voucherId.toString(),
+                    userId.toString(),
+                    String.valueOf(orderId),
+                    String.valueOf(System.currentTimeMillis()),
+                    accessToken == null ? "" : accessToken,
+                    seckillAccessTokenService.isEnabled() ? "1" : "0"
             );
-            int resultCode = scriptResult == null ? -1 : scriptResult.intValue();
-            if (resultCode == 1) {
-                return Result.fail("库存不足");
-            }
-            if (resultCode == 2) {
-                return Result.fail("不能重复下单");
-            }
-            if (resultCode != 0) {
-                return Result.fail("秒杀服务繁忙，请稍后重试");
-            }
-
-            long orderId;
-            try {
-                orderId = redisIdWorker.nextId("order");
-                Boolean created = transactionTemplate.execute(status -> {
-                    boolean stockUpdated = seckillVoucherService.update()
-                            .setSql("stock = stock - 1")
-                            .eq("voucher_id", voucherId)
-                            .gt("stock", 0)
-                            .update();
-                    if (!stockUpdated) {
-                        status.setRollbackOnly();
-                        return false;
-                    }
-
-                    VoucherOrder order = new VoucherOrder();
-                    order.setId(orderId);
-                    order.setUserId(userId);
-                    order.setVoucherId(voucherId);
-                    boolean saved = save(order);
-                    if (!saved) {
-                        status.setRollbackOnly();
-                    }
-                    return saved;
-                });
-                if (!Boolean.TRUE.equals(created)) {
-                    rollbackReservation(stockKey, orderKey, userId);
-                    return Result.fail("库存不足");
-                }
-            } catch (RuntimeException e) {
-                rollbackReservation(stockKey, orderKey, userId);
-                return Result.fail("下单失败，请稍后重试");
-            }
-            return Result.ok(orderId);
-        } finally {
-            // Redisson 会校验锁持有者；仅当前线程持锁时释放，避免误删其他请求续接的锁。
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
+        } catch (RuntimeException e) {
+            log.error("秒杀 Lua 执行结果未知，禁止回滚，orderId={}", orderId, e);
+            return unconfirmed(orderId);
         }
+        if (scriptResult == null) {
+            log.error("秒杀 Lua 未返回状态码，禁止回滚，orderId={}", orderId);
+            return unconfirmed(orderId);
+        }
+        if (scriptResult == 0L) {
+            return Result.ok(orderId);
+        }
+        return Result.fail(resolveSeckillFailure(scriptResult.intValue()));
     }
 
-    private void rollbackReservation(String stockKey, String orderKey, Long userId) {
-        stringRedisTemplate.execute(
-                ROLLBACK_SCRIPT,
-                Arrays.asList(stockKey, orderKey),
-                userId.toString()
-        );
+    private Result unconfirmed(long orderId) {
+        return Result.fail("结果未确认，请使用订单ID查询最终状态", orderId);
+    }
+
+    private String resolveSeckillFailure(int code) {
+        switch (code) {
+            case 1: return "库存不足";
+            case 2: return "不能重复下单";
+            case 3: return "秒杀活动配置不存在或尚未就绪";
+            case 4: return "秒杀尚未开始";
+            case 5: return "秒杀已经结束";
+            case 6: return "秒杀活动已下架";
+            case 7: return "秒杀资格令牌无效或已失效";
+            case 8: return "秒杀活动数据恢复中，请稍后重试";
+            default: return "秒杀服务繁忙，请稍后重试";
+        }
     }
 }

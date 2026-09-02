@@ -6,6 +6,7 @@ import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
+import com.hmdp.service.IUserInfoService;
 import com.hmdp.utils.UserHolder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,8 @@ class UserServiceImplTest {
     @Mock
     private UserMapper userMapper;
     @Mock
+    private IUserInfoService userInfoService;
+    @Mock
     private StringRedisTemplate stringRedisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -52,6 +55,7 @@ class UserServiceImplTest {
         userService = new UserServiceImpl();
         ReflectionTestUtils.setField(userService, "baseMapper", userMapper);
         ReflectionTestUtils.setField(userService, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(userService, "userInfoService", userInfoService);
         lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 

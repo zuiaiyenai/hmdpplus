@@ -17,7 +17,6 @@ import javax.annotation.Resource;
  * </p>
  *
  * @author 虎哥
- * @since 2021-12-22
  */
 @RestController
 @RequestMapping("/shop")
@@ -43,10 +42,7 @@ public class ShopController {
      */
     @PostMapping
     public Result saveShop(@RequestBody Shop shop) {
-        // 写入数据库
-        shopService.save(shop);
-        // 返回店铺id
-        return Result.ok(shop.getId());
+        return shopService.saveShop(shop);
     }
 
     /**
@@ -56,25 +52,31 @@ public class ShopController {
      */
     @PutMapping
     public Result updateShop(@RequestBody Shop shop) {
-        return shopService.updateShop(shop);
+        // 写入数据库
+        return shopService.update(shop);
     }
 
     /**
      * 根据商铺类型分页查询商铺信息
      * @param typeId 商铺类型
      * @param current 页码
-     * @param x 经度
-     * @param y 纬度
      * @return 商铺列表
      */
     @GetMapping("/of/type")
     public Result queryShopByType(
             @RequestParam("typeId") Integer typeId,
-            @RequestParam(value = "current", defaultValue = "1") Integer current,
+            @RequestParam(value="current", defaultValue = "1") Integer current,
             @RequestParam(value = "x", required = false) Double x,
-            @RequestParam(value = "y", required = false) Double y
+            @RequestParam(value = "y", required = false) Double y,
+            @RequestParam(value = "sortBy", defaultValue = "distance") String sortBy,
+            @RequestParam(value = "area", required = false) String area
     ) {
-        return shopService.queryShopByType(typeId, current, x, y);
+       return shopService.queryShopByType(typeId, current, x, y, sortBy, area);
+    }
+
+    @GetMapping("/areas")
+    public Result queryShopAreas(@RequestParam("typeId") Integer typeId) {
+        return shopService.queryShopAreas(typeId);
     }
 
     /**

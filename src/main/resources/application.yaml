@@ -5,20 +5,51 @@ spring:
     name: hmdp
   datasource:
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/heimadianping?useSSL=false&serverTimezone=UTC
-    username: root
-    password: root
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/heimadianping?useSSL=false&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
   redis:
-    host: localhost
-    port: 6379
-    password: 123456
-    database: 0
+    host: ${SPRING_REDIS_HOST:localhost}
+    port: ${SPRING_REDIS_PORT:6379}
+    password: ${SPRING_REDIS_PASSWORD:123456}
+    database: ${SPRING_REDIS_DATABASE:0}
     lettuce:
       pool:
         max-active: 10
         max-idle: 10
         min-idle: 1
         time-between-eviction-runs: 10s
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 10
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        request.timeout.ms: 30000
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.hmdp.kafka.message
+    listener:
+      auto-startup: ${HMDP_KAFKA_ENABLED:false}
+      ack-mode: manual_immediate
+      missing-topics-fatal: false
+    admin:
+      fail-fast: false
+  flyway:
+    enabled: ${HMDP_FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
+    validate-on-migrate: true
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
 mybatis-plus:
@@ -26,3 +57,148 @@ mybatis-plus:
 logging:
   level:
     com.hmdp: debug
+hmdp:
+  cache:
+    shop:
+      local:
+        enabled: ${HMDP_SHOP_LOCAL_CACHE_ENABLED:true}
+        maximum-size: ${HMDP_SHOP_LOCAL_CACHE_MAXIMUM_SIZE:10000}
+        expire-after-write-seconds: ${HMDP_SHOP_LOCAL_CACHE_EXPIRE_SECONDS:60}
+      redis-ttl-minutes: ${HMDP_SHOP_CACHE_REDIS_TTL_MINUTES:30}
+      null-ttl-seconds: ${HMDP_SHOP_CACHE_NULL_TTL_SECONDS:120}
+      rebuild:
+        wait-millis: ${HMDP_SHOP_CACHE_REBUILD_WAIT_MILLIS:3000}
+        lease-millis: ${HMDP_SHOP_CACHE_REBUILD_LEASE_MILLIS:10000}
+      bloom:
+        expected-insertions: ${HMDP_SHOP_BLOOM_EXPECTED_INSERTIONS:100000}
+        false-probability: ${HMDP_SHOP_BLOOM_FALSE_PROBABILITY:0.01}
+    seckill-voucher:
+      local:
+        enabled: ${HMDP_SECKILL_LOCAL_CACHE_ENABLED:true}
+        maximum-size: ${HMDP_SECKILL_LOCAL_CACHE_MAXIMUM_SIZE:10000}
+        expire-after-write-seconds: ${HMDP_SECKILL_LOCAL_CACHE_EXPIRE_SECONDS:30}
+      logical-ttl-seconds: ${HMDP_SECKILL_CACHE_LOGICAL_TTL_SECONDS:300}
+      stale-grace-seconds: ${HMDP_SECKILL_CACHE_STALE_GRACE_SECONDS:86400}
+      null-ttl-seconds: ${HMDP_SECKILL_CACHE_NULL_TTL_SECONDS:120}
+      rebuild:
+        wait-millis: ${HMDP_SECKILL_CACHE_REBUILD_WAIT_MILLIS:200}
+        lease-millis: ${HMDP_SECKILL_CACHE_REBUILD_LEASE_MILLIS:10000}
+        core-pool-size: ${HMDP_SECKILL_CACHE_REBUILD_CORE_POOL_SIZE:2}
+        max-pool-size: ${HMDP_SECKILL_CACHE_REBUILD_MAX_POOL_SIZE:4}
+        queue-capacity: ${HMDP_SECKILL_CACHE_REBUILD_QUEUE_CAPACITY:200}
+      bloom:
+        expected-insertions: ${HMDP_SECKILL_BLOOM_EXPECTED_INSERTIONS:100000}
+        false-probability: ${HMDP_SECKILL_BLOOM_FALSE_PROBABILITY:0.01}
+  kafka:
+    enabled: ${HMDP_KAFKA_ENABLED:false}
+    seckill-order:
+      topic: ${HMDP_SECKILL_ORDER_TOPIC:hmdp.seckill-order.v1}
+      dlt-topic: ${HMDP_SECKILL_ORDER_DLT_TOPIC:hmdp.seckill-order.v1.DLT}
+      consumer-group: ${HMDP_SECKILL_ORDER_CONSUMER_GROUP:${spring.application.name}-seckill-order}
+      partitions: ${HMDP_SECKILL_ORDER_PARTITIONS:3}
+      replicas: ${HMDP_SECKILL_ORDER_REPLICAS:1}
+      consumer-concurrency: ${HMDP_SECKILL_ORDER_CONSUMER_CONCURRENCY:3}
+      consumer-max-poll-records: ${HMDP_SECKILL_ORDER_MAX_POLL_RECORDS:100}
+      retry-attempts: ${HMDP_SECKILL_ORDER_RETRY_ATTEMPTS:3}
+      retry-backoff-ms: ${HMDP_SECKILL_ORDER_RETRY_BACKOFF_MS:1000}
+      dlt-send-timeout-seconds: ${HMDP_SECKILL_ORDER_DLT_TIMEOUT_SECONDS:10}
+      outbox:
+        poll-delay-ms: ${HMDP_SECKILL_ORDER_OUTBOX_POLL_DELAY_MS:100}
+        batch-size: ${HMDP_SECKILL_ORDER_OUTBOX_BATCH_SIZE:100}
+        send-timeout-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_SEND_TIMEOUT_SECONDS:10}
+        relay-lease-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_RELAY_LEASE_SECONDS:30}
+        sent-recheck-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_SENT_RECHECK_SECONDS:60}
+        initial-backoff-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_INITIAL_BACKOFF_SECONDS:1}
+        max-backoff-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_MAX_BACKOFF_SECONDS:300}
+      handoff:
+        batch-size: ${HMDP_SECKILL_ORDER_HANDOFF_BATCH_SIZE:100}
+        idle-poll-ms: ${HMDP_SECKILL_ORDER_HANDOFF_IDLE_POLL_MS:20}
+        failure-backoff-initial-ms: ${HMDP_SECKILL_ORDER_HANDOFF_FAILURE_BACKOFF_INITIAL_MS:100}
+        failure-backoff-max-ms: ${HMDP_SECKILL_ORDER_HANDOFF_FAILURE_BACKOFF_MAX_MS:5000}
+        relay-lease-seconds: ${HMDP_SECKILL_ORDER_HANDOFF_RELAY_LEASE_SECONDS:15}
+        voucher-refresh-seconds: ${HMDP_SECKILL_ORDER_HANDOFF_VOUCHER_REFRESH_SECONDS:60}
+      accepted-recovery-delay-ms: ${HMDP_SECKILL_ORDER_ACCEPTED_RECOVERY_DELAY_MS:5000}
+    shop-cache:
+      topic: ${HMDP_SHOP_CACHE_INVALIDATION_TOPIC:hmdp.shop.cache-invalidation.v1}
+      dlt-topic: ${HMDP_SHOP_CACHE_INVALIDATION_DLT_TOPIC:hmdp.shop.cache-invalidation.v1.DLT}
+      consumer-group: ${HMDP_SHOP_CACHE_CONSUMER_GROUP:${spring.application.name}-shop-cache-${random.uuid}}
+      partitions: ${HMDP_SHOP_CACHE_TOPIC_PARTITIONS:3}
+      replicas: ${HMDP_SHOP_CACHE_TOPIC_REPLICAS:1}
+      min-in-sync-replicas: ${HMDP_SHOP_CACHE_MIN_IN_SYNC_REPLICAS:1}
+      consumer-concurrency: ${HMDP_SHOP_CACHE_CONSUMER_CONCURRENCY:1}
+      retry-attempts: ${HMDP_SHOP_CACHE_CONSUMER_RETRY_ATTEMPTS:3}
+      retry-backoff-ms: ${HMDP_SHOP_CACHE_CONSUMER_RETRY_BACKOFF_MS:1000}
+      dlt-send-timeout-seconds: ${HMDP_SHOP_CACHE_DLT_SEND_TIMEOUT_SECONDS:10}
+      outbox:
+        poll-delay-ms: ${HMDP_SHOP_CACHE_OUTBOX_POLL_DELAY_MS:200}
+        batch-size: ${HMDP_SHOP_CACHE_OUTBOX_BATCH_SIZE:100}
+        send-timeout-seconds: ${HMDP_SHOP_CACHE_OUTBOX_SEND_TIMEOUT_SECONDS:10}
+        max-auto-retries: ${HMDP_SHOP_CACHE_OUTBOX_MAX_AUTO_RETRIES:12}
+        initial-backoff-seconds: ${HMDP_SHOP_CACHE_OUTBOX_INITIAL_BACKOFF_SECONDS:1}
+        max-backoff-seconds: ${HMDP_SHOP_CACHE_OUTBOX_MAX_BACKOFF_SECONDS:300}
+    seckill-voucher-cache:
+      topic: ${HMDP_SECKILL_VOUCHER_CACHE_TOPIC:hmdp.seckill-voucher.l1-invalidation.v1}
+      dlt-topic: ${HMDP_SECKILL_VOUCHER_CACHE_DLT_TOPIC:hmdp.seckill-voucher.l1-invalidation.v1.DLT}
+      consumer-group: ${HMDP_SECKILL_VOUCHER_CACHE_CONSUMER_GROUP:${spring.application.name}-seckill-voucher-l1-${random.uuid}}
+      partitions: ${HMDP_SECKILL_VOUCHER_CACHE_PARTITIONS:3}
+      replicas: ${HMDP_SECKILL_VOUCHER_CACHE_REPLICAS:1}
+      min-in-sync-replicas: ${HMDP_SECKILL_VOUCHER_CACHE_MIN_IN_SYNC_REPLICAS:1}
+      consumer-concurrency: ${HMDP_SECKILL_VOUCHER_CACHE_CONSUMER_CONCURRENCY:1}
+      retry-attempts: ${HMDP_SECKILL_VOUCHER_CACHE_RETRY_ATTEMPTS:3}
+      retry-backoff-ms: ${HMDP_SECKILL_VOUCHER_CACHE_RETRY_BACKOFF_MS:1000}
+      dlt-send-timeout-seconds: ${HMDP_SECKILL_VOUCHER_CACHE_DLT_SEND_TIMEOUT_SECONDS:10}
+      outbox:
+        poll-delay-ms: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_POLL_DELAY_MS:200}
+        batch-size: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_BATCH_SIZE:100}
+        send-timeout-seconds: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_SEND_TIMEOUT_SECONDS:10}
+        max-auto-retries: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_MAX_AUTO_RETRIES:12}
+        initial-backoff-seconds: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_INITIAL_BACKOFF_SECONDS:1}
+        max-backoff-seconds: ${HMDP_SECKILL_VOUCHER_CACHE_OUTBOX_MAX_BACKOFF_SECONDS:300}
+  outbox:
+    enabled: ${HMDP_OUTBOX_ENABLED:${HMDP_KAFKA_ENABLED:false}}
+  rate-limit:
+    enabled: ${HMDP_RATE_LIMIT_ENABLED:false}
+  seckill:
+    order-id:
+      mode: ${HMDP_SECKILL_ORDER_ID_MODE:db-segment}
+      segment-step: ${HMDP_SECKILL_ORDER_ID_SEGMENT_STEP:10000}
+      prefetch-percent: ${HMDP_SECKILL_ORDER_ID_PREFETCH_PERCENT:20}
+    access-token:
+      enabled: true
+      ttl-seconds: 30
+    rate-limit:
+      enabled: true
+      trust-forwarded-headers: true
+      trusted-proxies: [127.0.0.1, "0:0:0:0:0:0:0:1", "::1"]
+      issue-access-token:
+        window-millis: 1000
+        activity-capacity: 300
+        ip-capacity: 30
+        user-capacity: 2
+      seckill-order:
+        window-millis: 1000
+        activity-capacity: 200
+        ip-capacity: 20
+        user-capacity: 2
+      adaptive:
+        enabled: true
+        warning-backlog: 1000
+        critical-backlog: 5000
+        warning-multiplier: 0.5
+        critical-multiplier: 0.1
+    marketing:
+      enabled: ${HMDP_SECKILL_MARKETING_ENABLED:true}
+      subscription-grace-seconds: ${HMDP_SECKILL_SUBSCRIPTION_GRACE_SECONDS:86400}
+      top-buyer-retention-days: ${HMDP_SECKILL_TOP_BUYER_RETENTION_DAYS:30}
+      reminder:
+        enabled: ${HMDP_SECKILL_REMINDER_ENABLED:true}
+        lead-seconds: ${HMDP_SECKILL_REMINDER_LEAD_SECONDS:120}
+        max-audience: ${HMDP_SECKILL_REMINDER_MAX_AUDIENCE:500}
+        top-buyer-days: ${HMDP_SECKILL_REMINDER_TOP_BUYER_DAYS:30}
+        top-buyer-count: ${HMDP_SECKILL_REMINDER_TOP_BUYER_COUNT:200}
+        vip-min-level: ${HMDP_SECKILL_REMINDER_VIP_MIN_LEVEL:1}
+        vip-count: ${HMDP_SECKILL_REMINDER_VIP_COUNT:200}
+      notification:
+        retention-days: ${HMDP_NOTIFICATION_RETENTION_DAYS:30}
+        max-items: ${HMDP_NOTIFICATION_MAX_ITEMS:100}
+        dedup-seconds: ${HMDP_NOTIFICATION_DEDUP_SECONDS:300}

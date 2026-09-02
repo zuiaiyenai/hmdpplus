@@ -9,14 +9,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.geo.Circle;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
+import org.springframework.data.geo.Metrics;
 import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
@@ -69,17 +70,18 @@ class ShopServiceImplTest {
         RedisGeoCommands.GeoLocation<String> secondLocation =
                 new RedisGeoCommands.GeoLocation<>("1", new Point(120.2, 30.2));
         GeoResults<RedisGeoCommands.GeoLocation<String>> geoResults = new GeoResults<>(Arrays.asList(
-                new GeoResult<>(firstLocation, new Distance(100)),
-                new GeoResult<>(secondLocation, new Distance(200))
+                new GeoResult<>(firstLocation, new Distance(0.1, Metrics.KILOMETERS)),
+                new GeoResult<>(secondLocation, new Distance(0.2, Metrics.KILOMETERS))
         ));
         when(stringRedisTemplate.hasKey(SHOP_GEO_KEY + 1)).thenReturn(true);
         when(stringRedisTemplate.opsForGeo()).thenReturn(geoOperations);
-        when(geoOperations.radius(
+        when(geoOperations.search(
                 eq(SHOP_GEO_KEY + 1),
-                any(Circle.class),
-                any(RedisGeoCommands.GeoRadiusCommandArgs.class)
+                any(GeoReference.class),
+                any(Distance.class),
+                any(RedisGeoCommands.GeoSearchCommandArgs.class)
         )).thenReturn(geoResults);
-        when(shopMapper.selectBatchIds(any())).thenReturn(Arrays.asList(
+        when(shopMapper.selectList(any())).thenReturn(Arrays.asList(
                 new Shop().setId(1L).setName("较远商户"),
                 new Shop().setId(2L).setName("较近商户")
         ));
