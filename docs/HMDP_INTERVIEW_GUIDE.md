@@ -1,6 +1,6 @@
 # HMDP Java 后端面试指南
 
-> 使用方式：先在 IDE 打开“项目代码”，再按“原理 → 设计原因 → 替代方案 → 优缺点 → 可直接回答”复述。所有结论以当前仓库为准；Kafka Broker E2E、JMeter 和故障演练仍是 `NOT VERIFIED`。
+> 使用方式：先在 IDE 打开“项目代码”，再按“原理 → 设计原因 → 替代方案 → 优缺点 → 可直接回答”复述。所有结论以当前仓库为准；Kafka Broker E2E、Sentinel 切换、MySQL 隔离断链和 JMeter 本机基线已验证，生产资格仍是 `NO-GO`。
 
 ## 1 为什么 Redis 能解决缓存穿透？
 
@@ -135,7 +135,7 @@
 - **设计原因**：消费者宕机不能把“已投递”当“已完成”。
 - **替代方案**：Kafka offset + retry/DLT、RabbitMQ requeue、数据库任务表。
 - **优缺点**：持久状态可恢复，但要防永久毒消息无限重试。
-- **可直接回答**：当前不是 Stream PEL，而是 Outbox 行租约过期后重新领取，Kafka 事务落库成功后才 ACK，坏消息走隔离/DLT 设计；Broker E2E 尚未实测。
+- **可直接回答**：当前不是 Stream PEL，而是 Outbox 行租约过期后重新领取，Kafka 事务落库成功后才 ACK，坏消息走隔离/DLT 设计；真实 Broker 已验证正常/重复投递和 Consumer 重启，毒消息与消费事务中途强杀仍是发布前演练项。
 
 ## 16 如何保证订单幂等？
 
@@ -216,7 +216,7 @@
 - **设计原因**：避免把 mock、配置文件或脚本存在夸大成生产能力。
 - **替代方案**：CI 环境、Testcontainers、预发布压测、混沌演练。
 - **优缺点**：证据分级更诚实；结论看起来不如虚构数字“亮眼”，但面试更经得起追问。
-- **可直接回答**：当前 `mvn clean package` 是 167 个测试全过，本地 MySQL/Redis/JAR/部分 API 已验证；Kafka Broker E2E、JMeter 和故障演练是 `NOT VERIFIED`，所以我把项目评级为优秀学习/求职项目，而不是生产级。
+- **可直接回答**：当前最终回归是 175 个测试全过；本地真实 Kafka E2E、Broker/Consumer 恢复、Sentinel 切换、MySQL 隔离断链和 JMeter 基线已验证。但远程 CI 尚未绿、Linux Redis 6.2 + AOF Compose 和长稳/备份恢复未验证，所以我仍把它定位为证据较完整的求职项目，而不是生产级系统。
 
 ## 面试前 5 分钟代码路线
 

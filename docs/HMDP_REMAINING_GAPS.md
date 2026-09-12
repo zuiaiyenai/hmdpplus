@@ -1,17 +1,17 @@
 # HMDP Remaining Gaps
 
-本文件只记录最终复审后仍为 `PARTIAL` 或 `NOT VERIFIED` 的 16 项。最终没有 `MISSING` 或 `DEFECTIVE` 项。
+本文件只记录 2026-09-12 真实资格复验后仍为 `PARTIAL`、`NOT VERIFIED` 或 `DEFECTIVE` 的 10 项。Kafka E2E、Consumer 重启、Kafka 停机恢复、MySQL Handoff 恢复和 JMeter 本机基线已经闭环，不再列为剩余缺口。最终没有 `MISSING` 项。
 
 ## Hikari 参数
 
 目标实现：按消费者吞吐配置连接池。
 我的状态：`PARTIAL`，仍使用 Spring Boot 默认池参数。
-为什么没实现：没有真实 Kafka 消费吞吐与连接等待数据，提前调参会变成猜测。
+为什么没实现：本轮只有短时单实例基线，缺少长稳期间的连接等待、池利用率和 MySQL 容量数据，提前调参会变成猜测。
 影响：高并发消费时可能出现连接等待，也可能因池过大挤压 MySQL。
-是否建议实现：取得压测和连接池指标后再调。
+是否建议实现：取得长稳和连接池指标后再调。
 优先级：P1。
 预计涉及文件：`application.yaml`。
-验证方式：Kafka E2E + Hikari pending/active 指标 + MySQL 连接数。
+验证方式：固定负载下联合观察 Hikari pending/active、Kafka backlog 与 MySQL 连接数。
 
 ## 统一 TTL jitter
 
@@ -27,13 +27,13 @@
 ## Redis 故障读降级矩阵
 
 目标实现：部分 best-effort。
-我的状态：`PARTIAL`，部分失效与读取路径可降级，但未统一定义 fail-open/fail-close。
-为什么没实现：秒杀写、登录、普通查询的正确策略不同，需要真实故障演练后固化。
-影响：Redis 故障时不同接口的响应语义不够统一。
-是否建议实现：建议按读取、登录、秒杀、缓存失效四类形成决策表。
+我的状态：`PARTIAL`，Sentinel 切换、全停失败语义和恢复重连已实测，但不同接口尚未形成统一的 fail-open/fail-close 契约。
+为什么没实现：秒杀写、登录、普通查询和缓存失效的正确策略不同。
+影响：Redis 全停时接口虽然不会虚假成功，但目前仍以 HTTP 200 包装 `success:false`，客户端语义不够统一。
+是否建议实现：建议按读取、登录、秒杀、缓存失效四类形成决策表并补契约测试。
 优先级：P1。
 预计涉及文件：缓存服务、登录服务、秒杀入口、异常处理和运维文档。
-验证方式：真实 Redis 停机/恢复，逐接口记录状态码、数据正确性和恢复时间。
+验证方式：隔离 Redis 全停/恢复，逐接口记录 HTTP 状态、业务结果、数据正确性和恢复时间。
 
 ## VIP / 积分容量倍率
 
@@ -79,101 +79,35 @@
 预计涉及文件：Logback 配置、异常与 MQ 日志。
 验证方式：日志解析测试并确认 traceId/orderId/eventId 可检索。
 
-## Kafka Broker E2E
+## Redis 6.2 + AOF + Docker Compose 验证
 
-目标实现：源码和 Compose 存在，本轮未运行。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本机无 Docker、无 Kafka 监听。
-影响：Producer→Broker→Consumer→DB 的真实闭环尚未证明。
-是否建议实现：必须。
-优先级：P0。
-预计涉及文件：通常无需改代码，可能补 E2E 脚本与报告。
-验证方式：真实 Kafka 正常消息、重复消息、异常消息与最终 DB 核对。
-
-## Consumer 重启恢复
-
-目标实现：依赖手动 ACK 与 Kafka offset。
-我的状态：`NOT VERIFIED`。
-为什么没实现：无真实 Broker/Consumer 运行环境。
-影响：重启窗口的重复消费与最终恢复时间未知。
-是否建议实现：必须。
+目标实现：Linux Redis 6.2 Compose 编排。
+我的状态：`PARTIAL`；本轮在独立端口使用 Windows Redis 3.2.100 完成 1 主 2 从、3 Sentinel、master failover、客户端读写与重连，但临时数据节点为 `appendonly no`。
+为什么没实现：当前机器没有 Docker、Podman 或 WSL，无法运行仓库中的 Linux Compose 栈。
+影响：尚未证明镜像健康检查、Redis 6.2 行为、AOF 持久性以及全节点停止后的数据恢复。
+是否建议实现：必须在发布前完成。
 优先级：P1。
-预计涉及文件：故障演练脚本和报告。
-验证方式：消费处理中终止应用，重启后核对 offset、重复消息和订单唯一性。
+预计涉及文件：通常无需业务代码修改；必要时修正 `compose.yaml`、`docker/redis` 和演练文档。
+验证方式：Linux/Docker 启动仓库 Compose，执行 master failover、全停、AOF 恢复及数据一致性核对。
 
-## Kafka 暂停与 Outbox 恢复
+## 限流 HTTP 429 契约
 
-目标实现：Broker 不可用时 Outbox 保留并重试。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本机无 Kafka/Docker。
-影响：真实客户端超时、退避与 backlog 恢复曲线未知。
-是否建议实现：必须。
+目标实现：限流异常映射为 HTTP 429。
+我的状态：`DEFECTIVE`；本轮 15,161 次 `SeckillRateLimitException` 均被全局处理为 HTTP 200，JMeter 因此显示 0 HTTP 错误。
+为什么没实现：本轮按要求冻结业务功能，只记录缺陷，不改变接口契约。
+影响：客户端、网关和监控无法通过 HTTP 状态码识别限流。
+是否建议实现：建议作为下一项 P0 修复，并补 MVC/集成测试。
 优先级：P0。
-预计涉及文件：故障脚本、指标/告警配置和验证报告。
-验证方式：停止 Broker、产生事件、确认 PENDING/SENT 保留，恢复后核对最终落库。
-
-## MySQL 故障时 Handoff 保留
-
-目标实现：Handoff 在 Outbox 事务成功后才删除。
-我的状态：`NOT VERIFIED`，单测覆盖但未真实停库。
-为什么没实现：当前 MySQL 是主机服务，未进行破坏性停机演练。
-影响：真实驱动超时、连接池恢复和 Handoff backlog 恢复时间未知。
-是否建议实现：必须在隔离环境执行。
-优先级：P0。
-预计涉及文件：故障脚本和报告，必要时连接池配置。
-验证方式：隔离 Compose 中停止 MySQL，确认 Handoff 不删；恢复后核对 Outbox 与订单。
-
-## Redis 故障注入
-
-目标实现：Compose stop/start 方案。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本机无 Docker，不能安全隔离当前 Redis。
-影响：Sentinel failover、客户端重连和接口降级未证明。
-是否建议实现：必须。
-优先级：P1。
-预计涉及文件：故障脚本、验证报告，必要时 Redis 超时配置。
-验证方式：停止 master，记录 Sentinel 选主、应用错误率、恢复时间与数据完整性。
-
-## MySQL 故障注入
-
-目标实现：Compose stop/start 方案。
-我的状态：`NOT VERIFIED`。
-为什么没实现：没有隔离容器环境，不应停止用户现有 MySQL 服务。
-影响：HTTP、Consumer、Outbox 在真实数据库故障下的表现未证明。
-是否建议实现：必须。
-优先级：P0。
-预计涉及文件：故障脚本与报告。
-验证方式：停止隔离 MySQL，分别验证查询、受理、消费、恢复和数据核对。
-
-## Kafka 故障注入
-
-目标实现：Compose stop/start 方案。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本机没有 Kafka/Docker。
-影响：发送超时、重试、DLT、积压恢复尚无真实证据。
-是否建议实现：必须。
-优先级：P0。
-预计涉及文件：故障脚本、指标告警与报告。
-验证方式：Broker 暂停/恢复、网络中断、毒消息和 backlog 清零核对。
-
-## QPS / P50 / P95 / P99
-
-目标实现：有 JMeter 场景，没有本轮固定环境结果。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本机没有 JMeter、Docker、Kafka，无法形成可复现整栈结果。
-影响：无法量化冷/热缓存、秒杀吞吐和尾延迟。
-是否建议实现：在固定硬件与固定数据集上执行。
-优先级：P1。
-预计涉及文件：现有 `load-tests/jmeter`、结果目录和环境说明。
-验证方式：冷/热商户查询及正常/并发/重复用户秒杀，保存 JTL、HTML 报告和环境参数。
+预计涉及文件：全局异常处理、限流异常映射及相应测试。
+验证方式：触发限流后同时断言 HTTP 429、业务错误码和 Micrometer 计数。
 
 ## 生产资格
 
 目标实现：没有生产证据。
-我的状态：`NOT VERIFIED`。
-为什么没实现：本轮是本地源码、单测和有限真实依赖验证，没有长期流量、监控、备份恢复和发布记录。
+我的状态：`NOT VERIFIED` / `NO-GO`。
+为什么没实现：本轮完成的是本地短时真实依赖验证；远程 CI 修复尚未取得绿灯，也没有 Linux Compose、长稳、备份恢复、安全审计和发布回滚记录。
 影响：不能宣称生产级、高可用或已承载真实流量。
 是否建议实现：上线前必须完成独立资格门禁。
-优先级：P3（不影响本轮源码对标，但影响上线声明）。
+优先级：P3（不影响源码对标，但影响上线声明）。
 预计涉及文件：部署、监控、告警、备份恢复、容量与发布文档。
-验证方式：预生产演练、长稳、容量、备份恢复、安全审计和发布回滚验证。
+验证方式：CI 绿灯、预生产 Linux Compose 演练、长稳与容量测试、备份恢复、安全审计和发布回滚验证。

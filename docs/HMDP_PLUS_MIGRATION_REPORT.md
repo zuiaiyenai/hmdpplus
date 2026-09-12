@@ -5,12 +5,13 @@
 > 分支：`feature/hmdp-plus-migration`
 > 验收日期：2026-09-12
 > 证据口径：源码、自动化测试、真实运行、生产证明分开记录。
+> 本报告记录迁移阶段验收；后续真实资格复验结果以 [HMDP_FINAL_QUALIFICATION_REPORT.md](HMDP_FINAL_QUALIFICATION_REPORT.md) 为准。
 
 ## 1 项目背景
 
 本次工作不是整仓复制 `hmdp-plus`，而是在原版黑马点评的 Java 8/Spring Boot 2.3.12 单体基础上，选择性迁移缓存、并发控制、可靠异步订单、营销与工程化能力。目标是得到一套能运行、能测试、能解释、适合 Java 后端求职的实现，同时保留目标仓库已有的博客、关注、签到等功能。
 
-完成度按 100 分拆分为：核心业务 25、缓存与 Redis 15、秒杀与一致性 25、工程与安全 15、自动化与运行验证 15、生产资格 5。当前分别为 23、14、23、14、12、0，合计 **86%**。缺口集中在 Kafka Broker 端到端、压测、故障注入、完整登录闭环和生产环境证明，不是源码缺失。
+迁移阶段曾按自定义 100 分口径评为 86%；该数字已被 159 项最终矩阵取代。2026-09-12 资格复验后的证据加权对齐率为 **96.2%**，只用于审计报告，不代表生产就绪率，也不应写入简历。
 
 ## 2 原始 heimadianping 架构
 
@@ -174,7 +175,7 @@ Flyway 配置为 `baseline-on-migrate=true`、基线版本 1、`validate-on-migr
 
 | 层级 | 2026-09-12 结果 | 结论 |
 |---|---|---|
-| `mvn clean package` | 167 tests，0 failure/error/skip，JAR 生成 | PASS |
+| 最终 `mvn test` | 175 tests，0 failure/error/skip | PASS |
 | Flyway/MySQL | MySQL 5.7 实连，3 migrations，版本 3 | PASS（本地） |
 | Redis | 6379 实连 | PASS（本地） |
 | 应用启动 | JAR 在 8081 启动成功 | PASS（本地） |
@@ -182,14 +183,14 @@ Flyway 配置为 `baseline-on-migrate=true`、基线版本 1、`validate-on-migr
 | 访问控制 | 匿名 `POST /shop` 返回 401 | PASS |
 | 验证码冷却 | 首次成功，立即重发返回频繁提示 | PASS |
 | 完整验证码登录 | 一次取错验证码导致失败 | **NOT VERIFIED** |
-| Kafka Broker E2E | 未执行 | **NOT VERIFIED** |
-| JMeter/故障注入 | 脚本存在，未执行 | **NOT VERIFIED** |
+| Kafka Broker E2E | 正常、重复、Consumer 重启、Broker 恢复 | PASS（本地） |
+| JMeter/故障注入 | 缓存/秒杀基线及 Kafka/MySQL/Sentinel 演练 | PASS/PARTIAL（见最终资格报告） |
 
 ## 27 未解决问题
 
-- Kafka Broker 真实投递、消费、DLT、恢复收敛未联调。
-- MySQL/Kafka/Redis 停机演练未实际执行。
-- 秒杀容量、缓存 A/B、P95/P99 未实测。
+- 毒消息/DLT、Consumer 写事务中途强杀尚未做真实演练。
+- Linux Redis 6.2 + AOF Compose、长稳、备份恢复和发布回滚尚未验证。
+- 限流已生效，但异常仍返回 HTTP 200，而不是 429。
 - 完整验证码登录、Token 续期和退出的真实 HTTP 闭环未完成；自动化测试已覆盖相关方法。
 - HyperLogLog 没有业务入口。
 - 点赞/关注的数据库与 Redis 仍是弱一致窗口。
@@ -215,7 +216,7 @@ Flyway 配置为 `baseline-on-migrate=true`、基线版本 1、`validate-on-migr
 - 针对热点商户查询，构建 Caffeine、Bloom Filter、Redis、Redisson 双重检查锁的多级缓存，并补充空值缓存、损坏缓存自愈和跨实例失效 Outbox，降低缓存穿透与重建并发风险。
 - 为秒杀入口实现活动/IP/用户三级 Lua 令牌桶、一次性访问令牌和不确定结果语义，避免攻击流量挤占正常容量，并为已受理未落库订单提供恢复、取消补偿和对账链路。
 - 将订单 ID 改为数据库号段分配与 JVM 本地预取，保留显式 Redis 回退模式；通过 Flyway 管理 Outbox、号段表和复合索引演进。
-- 完成管理接口鉴权、上传路径根边界、验证码冷却/一次性消费、单用户单 Token 和缓存异常自愈；本地 `mvn clean package` 通过 167 个测试。
+- 完成管理接口鉴权、上传路径根边界、验证码冷却/一次性消费、单用户单 Token 和缓存异常自愈；最终本地 `mvn test` 通过 175 个测试。
 
 ## 31 面试问题
 
@@ -225,7 +226,7 @@ Flyway 配置为 `baseline-on-migrate=true`、基线版本 1、`validate-on-migr
 
 统一回答框架：先说业务问题，再指出真实类/方法，然后解释数据结构和失败路径，最后说明替代方案与验证边界。例如：
 
-> 我没有把 Redis 扣库存直接等同于下单成功。Lua 成功只表示受理，订单先进入 ZSet Handoff；Relay 在 MySQL Outbox 提交成功后才删除 Handoff，随后由 Kafka 消费者事务性批量建单扣库存。重复事件靠 eventId/orderId 唯一键和 `INSERT IGNORE` 幂等。本地自动化测试覆盖了这些分支，但 Kafka Broker 故障恢复尚未做真实 E2E，所以我会把它描述为已实现、待环境验收，而不是生产已证明。
+> 我没有把 Redis 扣库存直接等同于下单成功。Lua 成功只表示受理，订单先进入 ZSet Handoff；Relay 在 MySQL Outbox 提交成功后才删除 Handoff，随后由 Kafka 消费者事务性批量建单扣库存。重复事件靠 eventId/orderId 唯一键和 `INSERT IGNORE` 幂等。本地真实 Kafka 已覆盖正常、重复、Consumer 重启和 Broker 恢复，但 Linux Compose、长稳与生产发布仍未证明，所以我只描述为“完成本地真实闭环验证”，不称“生产级”。
 
 ## 33 项目启动方法
 

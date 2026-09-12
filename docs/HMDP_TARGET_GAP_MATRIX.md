@@ -3,7 +3,7 @@
 > 审计日期：2026-09-12  
 > 目标仓库：`yyx758/hmdp-plus`，`master@191e3a2a978901612adfb391b30339d76aea8109`（2026-08-31T14:42:52+08:00）  
 > 我的仓库：`zuiaiyenai/hmdpplus`，`feature/hmdp-plus-migration@dfc2f1f23d03c4a5d8586a4643e345e22b6b93c5`（初始快照）  
-> 最终实现快照：`feature/hmdp-plus-migration@4558bba`（最终文档提交前的代码快照）
+> 最终实现快照：`feature/hmdp-plus-migration@63776c2425bf84e92ee94cbe47556b4827fa9967`（资格验证前代码快照）
 > 证据口径：代码/配置存在不等于真实依赖、故障、性能或生产验证通过。
 
 ## Target Gap Summary
@@ -22,7 +22,7 @@
 
 初始真实功能对齐率：**83.3%**。运行资格不并入静态功能完成率，单独列为 `NOT VERIFIED`。
 
-最终复审仍按相同 159 项逐行计算：`MATCHED 108`、`EQUIVALENT 13`、`BETTER 22`、`PARTIAL 7`、`MISSING 0`、`NOT VERIFIED 9`、`DEFECTIVE 0`，最终证据加权对齐率为 **92.1%**。下表状态已更新为最终复审结果；初始统计保留用于前后对照。
+2026-09-12 真实资格复验后仍按相同 159 项逐行计算：`MATCHED 107`、`EQUIVALENT 13`、`BETTER 29`、`PARTIAL 8`、`MISSING 0`、`NOT VERIFIED 1`、`DEFECTIVE 1`，证据加权对齐率为 **96.2%**。该比例只表示对标证据强度，不是生产就绪率；生产资格仍为 `NOT VERIFIED`。
 
 ## 完整功能矩阵
 
@@ -85,7 +85,7 @@
 | 活动限流 | 策略桶 | 活动/场景桶 | EQUIVALENT | Lua policy key | Lua activity key | 无 | 否 | P1 |
 | 动态阈值 | backlog 自适应 | backlog 自适应 | MATCHED | PressureService | PressureService | 无 | 否 | P1 |
 | VIP/高价值优先级 | 有倍率 | 我的版本无用户倍率 | PARTIAL | 用户倍率 | 总体/场景容量 | 缺 VIP/积分倍率 | 可选 | P2 |
-| 限流 HTTP 429 | 异常映射 | 异常映射 | MATCHED | Advice | Advice | 无 | 否 | P1 |
+| 限流 HTTP 429 | 异常映射 | 限流异常被全局处理为 HTTP 200 | DEFECTIVE | Advice | 15,161 次真实限流异常均返回 200 | 客户端/网关无法按状态码识别限流 | 是 | P0 |
 | 可信代理解析 | 默认关闭转发头 | 白名单代理才信任 | BETTER | ClientIpResolver | ClientIpResolver + trusted proxies | 无 | 否 | P0 |
 | Lua 原子扣库存 | 有 | 有 | MATCHED | `seckill.lua` | `seckill.lua` | 无 | 否 | P0 |
 | Lua 订单 ID | 参数传入 | 参数传入 | MATCHED | Java 发号 | Java 发号 | 无 | 否 | P0 |
@@ -117,15 +117,15 @@
 | Consumer 批量落库 | 有 | 有 | MATCHED | batch listener | batch listener | 无 | 否 | P1 |
 | Duplicate message | 不重复扣库 | 不重复扣库 | MATCHED | unique + inserted count | 同方案 | 无 | 否 | P0 |
 | Poison message | DLT | DLT + 同步确认 recoverer | BETTER | DLT | `SynchronousDeadLetterPublishingRecoverer` | 无 | 否 | P0 |
-| Kafka Broker E2E | 目标源码有，当前环境未跑 | 当前环境未跑 | NOT VERIFIED | 需真实 broker | 需真实 broker | Docker/Kafka 不可用 | 是 | P0 |
-| Consumer 重启恢复 | 设计存在 | 设计存在 | NOT VERIFIED | offset/ACK | offset/ACK | 缺真实演练 | 是 | P1 |
-| Kafka 暂停恢复 | Outbox 应保留 | Outbox 应保留 | NOT VERIFIED | 设计证据 | 设计证据 | 缺真实演练 | 是 | P0 |
+| Kafka Broker E2E | 目标源码有，当前环境未跑 | Kafka 3.7.1 实际闭环 | BETTER | 需真实 broker | Producer→Broker→Consumer→MySQL | 正常与重复消息均完成 | 否 | P0 |
+| Consumer 重启恢复 | 设计存在 | Broker 保留消息，Consumer 重启后完成 | BETTER | offset/ACK | 离线时订单 0，重启后 COMPLETED | 真实演练通过 | 否 | P1 |
+| Kafka 暂停恢复 | Outbox 应保留 | Broker 停止时重试，恢复后收敛 | BETTER | 设计证据 | PENDING 重试 5 次后 COMPLETED | 真实演练通过 | 否 | P0 |
 | Redis/MySQL 库存一致性 | 对账与补偿 | 对账与补偿 | MATCHED | Reconciliation | Reconciliation | 无 | 否 | P0 |
 | accepted 恢复 | 定时恢复 | 定时恢复 | MATCHED | RecoveryService | RecoveryService | 无 | 否 | P0 |
 | 启动库存恢复 | Initializer | Initializer | MATCHED | StockInitializer | StockInitializer | 无 | 否 | P0 |
 | 定时全量对账 | 有 | 有 | MATCHED | ReconciliationService | 同类 | 无 | 否 | P1 |
-| MySQL 故障 Handoff 保留 | 设计存在 | 设计存在 | NOT VERIFIED | Handoff | Handoff | 缺真实停机演练 | 是 | P0 |
-| Redis 重启恢复 | Sentinel/初始化/对账 | Sentinel 编排 + 初始化 + 对账 | MATCHED | Sentinel Compose | 1 主 2 从 + 3 Sentinel Compose | 实际切换演练另列未验证 | 否 | P1 |
+| MySQL 故障 Handoff 保留 | 设计存在 | 隔离网络中断下 Handoff 保留并恢复 | BETTER | Handoff | 暖号段下 DB 0 行/Handoff 1，恢复后 COMPLETED | 冷号段仍依赖 DB | 否 | P0 |
+| Redis 重启恢复 | Sentinel/初始化/对账 | Sentinel 编排 + 初始化 + 对账 | MATCHED | Sentinel Compose | 1 主 2 从 + 3 Sentinel Compose | Windows 临时集群切换已验证；Linux Compose/AOF 另列 PARTIAL | 否 | P1 |
 | Redis 数据丢失恢复 | 重建元数据/投影 | 重建元数据/投影 | MATCHED | Synchronizer | Synchronizer | 无 | 否 | P0 |
 | 单 Redis Compose | 有 | 有 | MATCHED | compose 变体 | `compose.yaml` | 无 | 否 | P1 |
 | Redis Sentinel Compose | 3 节点 + 3 Sentinel | 3 节点 + 3 Sentinel | MATCHED | Docker configs/Compose | `compose.yaml` + `docker/redis` | 无静态能力缺口 | 否 | P1 |
@@ -171,11 +171,11 @@
 | 结构化日志 | 普通文本日志 | 普通文本日志 | PARTIAL | Logback 默认 | Logback 默认 | 缺统一字段 | 可选 | P2 |
 | JMeter 场景 | 有 | 有 | MATCHED | `load-tests/jmeter` | 同目录 | 无 | 否 | P1 |
 | 缓存基准脚本 | 有 | 有 | MATCHED | benchmark script | 同脚本 | 无 | 否 | P1 |
-| QPS/P50/P95/P99 | 有脚本无本轮结果 | 有脚本无本轮结果 | NOT VERIFIED | 需真实运行 | 需真实运行 | 当前无 Docker/JMeter | 是 | P1 |
-| Redis 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P1 |
-| MySQL 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P0 |
-| Kafka 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P0 |
-| GitHub Actions CI | 无 | MySQL/Redis/Kafka services + Java 8 Maven test | BETTER | 目标缺失 | `.github/workflows/ci.yml` | 未在本分支远程触发 | 否 | P1 |
+| QPS/P50/P95/P99 | 有脚本无本轮结果 | JMeter 5.6.3 真实本机结果 | BETTER | 需真实运行 | 缓存与 2,000 次秒杀 JTL | 仅本机单实例基线 | 否 | P1 |
+| Redis 故障注入 | 有方案 | Sentinel 切换与全停重连已实测 | PARTIAL | Compose stop/start | Windows Redis 3.2 隔离集群 | 未验证 Linux Redis 6.2 + AOF Compose | 是 | P1 |
+| MySQL 故障注入 | 有方案 | 隔离 TCP 断链与恢复已实测 | BETTER | Compose stop/start | 只影响测试实例的 13306 代理 | 暖号段路径通过 | 否 | P0 |
+| Kafka 故障注入 | 有方案 | Broker 停止、重启与积压恢复已实测 | BETTER | Compose stop/start | Kafka 3.7.1 KRaft | 真实演练通过 | 否 | P0 |
+| GitHub Actions CI | 无 | MySQL/Redis/Kafka services + Java 8 Maven test | BETTER | 目标缺失 | `.github/workflows/ci.yml` | run 34681754872 失败；修复 `760134b` 待推送复验 | 否 | P1 |
 | Maven 自动构建 | 手工 | push/PR 自动测试 | BETTER | 可运行 Maven | GitHub Actions | 无代码能力缺口 | 否 | P1 |
 | Dockerfile | 有 | 有 | MATCHED | 多阶段 Java 8 镜像 | 多阶段 Java 8 镜像 | 无 | 否 | P1 |
 | App Compose | 有 app service | app + MySQL + Sentinel Redis + Kafka | MATCHED | app+依赖 | 完整依赖与健康顺序 | 无静态能力缺口 | 否 | P1 |
@@ -185,7 +185,7 @@
 | Healthcheck | 各服务有 | app 与全部依赖均有 | MATCHED | app 依赖链 | Compose healthcheck/depends_on | 无静态能力缺口 | 否 | P1 |
 | 本轮 Maven 全量测试 | 固定目标源码未重跑 | 175 tests 全绿 | MATCHED | 历史目标测试证据 | MySQL/Redis 真实依赖回归 | Kafka 由独立 E2E 项约束 | 否 | P0 |
 | 真实 MySQL | 固定目标源码未重跑 | MySQL 5.7.26 已验证 | BETTER | 仅源码证据 | Flyway V4、Mapper 集成测试、EXPLAIN | 非生产数据规模 | 否 | P0 |
-| 真实 Redis | 固定目标源码未重跑 | 真实 Redis Lua 并发测试通过 | BETTER | 仅源码证据 | 40 并发一人一单/库存/Token 原子性 | Sentinel 切换另列未验证 | 否 | P0 |
+| 真实 Redis | 固定目标源码未重跑 | Lua 并发与 Sentinel 切换通过 | BETTER | 仅源码证据 | Lua 原子性 + Windows Redis 3.2 failover | Linux Redis 6.2 + AOF Compose 未验证 | 否 | P0 |
 | 生产资格 | 未证明 | 未证明 | NOT VERIFIED | 无生产证据 | 无生产证据 | 需要长期运行证据 | 否 | P3 |
 
 ## 双方秒杀主链
@@ -204,8 +204,8 @@
 4. Phase 3：增加应用 Dockerfile、app Compose 与健康检查。
 5. Phase 4：增加 Actuator/Prometheus、请求 traceId 和秒杀/Outbox 指标。
 6. Phase 5：增加 Outbox 历史清理与可观测告警边界。
-7. Phase 6：在环境可用时执行 Kafka E2E、停机恢复、EXPLAIN 与压测。
-8. Phase 7：重新索引双方源码，生成最终报告和仅含未关闭项的清单。
+7. Phase 6：已执行 Kafka E2E、停机恢复、Sentinel failover、MySQL 隔离断链、EXPLAIN 与 JMeter 本机基线。
+8. Phase 7：已重新核对矩阵并生成最终资格报告和仅含未关闭项的清单。
 
 ## 不迁移决策
 

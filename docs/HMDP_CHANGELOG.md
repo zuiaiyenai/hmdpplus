@@ -3,6 +3,7 @@
 > 目标：`D:\code\heimadianping\hm-dianping`
 > 参考：`D:\code\hmdp-plus`（只读）
 > 分支：`feature/hmdp-plus-migration`
+> 本文件按 Phase 保留当时的验证状态；当前资格结论以 [HMDP_FINAL_QUALIFICATION_REPORT.md](HMDP_FINAL_QUALIFICATION_REPORT.md) 为准。
 
 ## 变更原则
 
@@ -43,14 +44,14 @@
 
 - **新增/修改**：`SeckillOrderKafkaConfig`、Producer、Consumer、`SeckillOrderOutboxRelay`、`VoucherOrderPersistenceServiceImpl`、DLT Recoverer。
 - **原因**：HTTP 线程不直接写订单；用 Outbox 行租约、幂等生产、手动 ACK、批量事务和唯一键处理至少一次投递。
-- **验证**：自动化测试通过；Kafka Broker E2E **NOT VERIFIED**。
+- **验证**：该 Phase 当时仅有自动化测试；2026-09-12 已补真实 Kafka Broker E2E、重复消息和重启恢复。
 - **提交**：能力最终汇总于 `f71769f`。
 
 ## Phase 5：生命周期、恢复、取消与对账
 
 - **新增/修改**：`SeckillOrderLifecycleService`、`SeckillAcceptedOrderRecoveryService`、`SeckillOrderReconciliationService`、生命周期 Controller/Mapper、取消补偿 Lua。
 - **原因**：区分已受理、处理中、成功、取消和失败；避免把异步处理中误报为失败。
-- **验证**：生命周期、恢复、对账和补偿单元测试通过；真实停机恢复演练 **NOT VERIFIED**。
+- **验证**：该 Phase 当时完成单测；2026-09-12 已补 Kafka、MySQL 网络中断和 Redis Sentinel 隔离演练。
 - **提交**：能力最终汇总于 `f71769f`。
 
 ## Phase 6：限流与营销能力
@@ -64,7 +65,7 @@
 
 - **新增/修改**：Caffeine LocalCache、Bloom Filter、`ShopCacheServiceImpl`、`SeckillVoucherCacheService`、Redisson 配置、缓存失效 Outbox/Kafka。
 - **原因**：降低缓存穿透、热点重建和多实例 L1 陈旧风险。
-- **验证**：本地缓存、Bloom、双重检查锁、失效发布/消费测试通过；缓存 A/B 性能数据 **NOT VERIFIED**。
+- **验证**：该 Phase 当时完成自动化测试；2026-09-12 已补 JMeter 冷/热缓存本机基线。
 - **提交**：基础能力 `f71769f`；损坏商户缓存自愈 `95de7a9`。
 
 ## Phase 8：数据库号段 ID
@@ -97,7 +98,7 @@
 - **依赖**：MySQL 5.7、Redis 6379 实际连接；Flyway 版本 3。
 - **启动**：JAR 在 8081 启动成功，验收进程已停止。
 - **接口**：损坏缓存自愈 PASS；匿名商户新增返回 401 PASS；验证码首次发送和立即重发冷却 PASS。
-- **边界**：完整验证码登录因一次读取错误验证码未完成；Kafka Broker、JMeter、故障演练均 **NOT VERIFIED**。
+- **边界**：本阶段结束时完整验证码登录未完成，Kafka Broker、JMeter、故障演练也尚未执行；后续资格复验已关闭后三项。
 
 ## Phase 12：文档交付
 
@@ -115,11 +116,11 @@
 | 证据 | 状态 |
 |---|---|
 | 源码与配置 | VERIFIED |
-| 167 个 Maven 测试 | PASS |
+| 最终 175 个 Maven 测试 | PASS |
 | MySQL/Redis/Flyway/JAR 启动 | PASS（本地） |
 | 部分真实 API | PASS |
 | 完整登录 HTTP 闭环 | NOT VERIFIED |
-| Kafka Broker E2E | NOT VERIFIED |
-| JMeter 性能数据 | NOT VERIFIED |
-| MySQL/Kafka/Redis 故障演练 | NOT VERIFIED |
+| Kafka Broker E2E | PASS（本地 Kafka 3.7.1） |
+| JMeter 性能数据 | PASS（本机短时基线） |
+| MySQL/Kafka/Redis 故障演练 | PASS/PARTIAL（边界见最终资格报告） |
 | 生产运行 | NOT PROVEN |
