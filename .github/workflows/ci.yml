@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Start integration dependencies
+        run: docker compose up -d --wait mysql redis kafka
+
+      - name: Run tests
+        env:
+          SPRING_CONFIG_ADDITIONAL_LOCATION: ''
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3308/heimadianping?useSSL=false&serverTimezone=UTC
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: '123456'
+          SPRING_REDIS_HOST: 127.0.0.1
+          SPRING_REDIS_PORT: '6380'
+          SPRING_REDIS_PASSWORD: '123456'
+          HMDP_KAFKA_ENABLED: 'false'
+          HMDP_OUTBOX_ENABLED: 'false'
+        run: mvn --batch-mode --no-transfer-progress test
+
+      - name: Show dependency diagnostics
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=200 mysql redis kafka
+
+      - name: Stop integration dependencies
+        if: always()
+        run: docker compose down -v
