@@ -24,19 +24,117 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  redis:
+  redis-node-1:
     image: redis:6.2-alpine
     ports:
       - "${HMDP_REDIS_PORT:-6380}:6379"
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "123456"]
+    command: ["sh", "-c", "cp /redis-template/redis.conf /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
     volumes:
       - redis-data:/data
+      - ./docker/redis/master.conf:/redis-template/redis.conf:ro
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "123456", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
     restart: unless-stopped
+
+  redis-node-2:
+    image: redis:6.2-alpine
+    ports:
+      - "${HMDP_REDIS_REPLICA_1_PORT:-6381}:6379"
+    command: ["sh", "-c", "cp /redis-template/redis.conf /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
+    volumes:
+      - redis2-data:/data
+      - ./docker/redis/replica.conf:/redis-template/redis.conf:ro
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a 123456 INFO replication 2>/dev/null | tr -d '\\r' | grep -q '^master_link_status:up$'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.11
+
+  redis-node-3:
+    image: redis:6.2-alpine
+    ports:
+      - "${HMDP_REDIS_REPLICA_2_PORT:-6382}:6379"
+    command: ["sh", "-c", "cp /redis-template/redis.conf /tmp/redis.conf && exec redis-server /tmp/redis.conf"]
+    volumes:
+      - redis3-data:/data
+      - ./docker/redis/replica.conf:/redis-template/redis.conf:ro
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a 123456 INFO replication 2>/dev/null | tr -d '\\r' | grep -q '^master_link_status:up$'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.12
+
+  redis-sentinel-1:
+    image: redis:6.2-alpine
+    ports:
+      - "${HMDP_REDIS_SENTINEL_1_PORT:-26380}:26379"
+    command: ["sh", "-c", "cp /sentinel-template/sentinel.conf /tmp/sentinel.conf && exec redis-sentinel /tmp/sentinel.conf"]
+    volumes:
+      - ./docker/redis/sentinel.conf:/sentinel-template/sentinel.conf:ro
+    depends_on: &sentinel-dependencies
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+    healthcheck: &sentinel-healthcheck
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.21
+
+  redis-sentinel-2:
+    image: redis:6.2-alpine
+    ports:
+      - "${HMDP_REDIS_SENTINEL_2_PORT:-26381}:26379"
+    command: ["sh", "-c", "cp /sentinel-template/sentinel.conf /tmp/sentinel.conf && exec redis-sentinel /tmp/sentinel.conf"]
+    volumes:
+      - ./docker/redis/sentinel.conf:/sentinel-template/sentinel.conf:ro
+    depends_on: *sentinel-dependencies
+    healthcheck: *sentinel-healthcheck
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.22
+
+  redis-sentinel-3:
+    image: redis:6.2-alpine
+    ports:
+      - "${HMDP_REDIS_SENTINEL_3_PORT:-26382}:26379"
+    command: ["sh", "-c", "cp /sentinel-template/sentinel.conf /tmp/sentinel.conf && exec redis-sentinel /tmp/sentinel.conf"]
+    volumes:
+      - ./docker/redis/sentinel.conf:/sentinel-template/sentinel.conf:ro
+    depends_on: *sentinel-dependencies
+    healthcheck: *sentinel-healthcheck
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.23
 
   kafka:
     image: apache/kafka:3.7.1
@@ -77,9 +175,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/heimadianping?useSSL=false&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: "123456"
-      SPRING_REDIS_HOST: redis
+      SPRING_PROFILES_ACTIVE: ${HMDP_SPRING_PROFILES_ACTIVE:-redis-sentinel}
+      SPRING_REDIS_HOST: redis-node-1
       SPRING_REDIS_PORT: "6379"
       SPRING_REDIS_PASSWORD: "123456"
+      SPRING_REDIS_SENTINEL_MASTER: ${HMDP_SPRING_REDIS_SENTINEL_MASTER:-hmdp-master}
+      SPRING_REDIS_SENTINEL_NODES: ${HMDP_SPRING_REDIS_SENTINEL_NODES:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       HMDP_KAFKA_ENABLED: "true"
       HMDP_OUTBOX_ENABLED: "true"
@@ -92,7 +193,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      redis:
+      redis-sentinel-1:
+        condition: service_healthy
+      redis-sentinel-2:
+        condition: service_healthy
+      redis-sentinel-3:
         condition: service_healthy
       kafka:
         condition: service_healthy
@@ -107,5 +212,13 @@ services:
 volumes:
   mysql-data:
   redis-data:
+  redis2-data:
+  redis3-data:
   kafka-data:
   app-uploads:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
