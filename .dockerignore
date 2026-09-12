@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.ua
+target
+docs
+load-tests
+scripts
+*.iml
+*.log
+
