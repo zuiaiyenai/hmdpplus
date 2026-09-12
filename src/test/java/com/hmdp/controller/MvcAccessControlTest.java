@@ -2,6 +2,7 @@ package com.hmdp.controller;
 
 import com.hmdp.dto.Result;
 import com.hmdp.service.ISeckillTopBuyerService;
+import com.hmdp.service.IShopService;
 import com.hmdp.service.IVoucherService;
 import com.hmdp.utils.UserHolder;
 import org.junit.jupiter.api.AfterEach;
@@ -20,9 +21,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = {VoucherController.class, UploadController.class})
+@WebMvcTest(controllers = {VoucherController.class, UploadController.class, ShopController.class})
 @ContextConfiguration(classes = {VoucherController.class, UploadController.class,
-        com.hmdp.config.MvcConfig.class})
+        ShopController.class, com.hmdp.config.MvcConfig.class})
 class MvcAccessControlTest {
 
     @Autowired
@@ -33,6 +34,9 @@ class MvcAccessControlTest {
 
     @MockBean
     private ISeckillTopBuyerService seckillTopBuyerService;
+
+    @MockBean
+    private IShopService shopService;
 
     @MockBean
     private StringRedisTemplate stringRedisTemplate;
@@ -63,6 +67,23 @@ class MvcAccessControlTest {
     void anonymousUsersCannotUploadImages() throws Exception {
         mockMvc.perform(MockMvcRequestBuilders.multipart("/upload/blog")
                         .file("file", "image".getBytes()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void anonymousUsersCanQueryShopDetails() throws Exception {
+        when(shopService.queryById(1L)).thenReturn(Result.ok());
+
+        mockMvc.perform(get("/shop/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    void anonymousUsersCannotCreateShops() throws Exception {
+        mockMvc.perform(post("/shop")
+                        .contentType("application/json")
+                        .content("{}"))
                 .andExpect(status().isUnauthorized());
     }
 }
