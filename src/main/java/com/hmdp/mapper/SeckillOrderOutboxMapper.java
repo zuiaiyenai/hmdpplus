@@ -2,6 +2,7 @@ package com.hmdp.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hmdp.kafka.outbox.SeckillOrderOutboxEvent;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -97,4 +98,9 @@ public interface SeckillOrderOutboxMapper extends BaseMapper<SeckillOrderOutboxE
             "AND status IN ('PENDING', 'SENT')",
             "</script>"})
     int markCompletedBatchByIds(@Param("ids") List<Long> ids);
+
+    @Delete("DELETE FROM tb_seckill_order_outbox WHERE status = 'COMPLETED' "
+            + "AND completed_time < #{cutoff} ORDER BY completed_time ASC, id ASC LIMIT #{limit}")
+    int deleteCompletedBefore(@Param("cutoff") LocalDateTime cutoff,
+                              @Param("limit") int limit);
 }

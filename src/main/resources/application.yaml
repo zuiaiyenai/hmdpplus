@@ -121,6 +121,12 @@ hmdp:
         sent-recheck-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_SENT_RECHECK_SECONDS:60}
         initial-backoff-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_INITIAL_BACKOFF_SECONDS:1}
         max-backoff-seconds: ${HMDP_SECKILL_ORDER_OUTBOX_MAX_BACKOFF_SECONDS:300}
+        cleanup:
+          retention-days: ${HMDP_SECKILL_ORDER_OUTBOX_RETENTION_DAYS:7}
+          batch-size: ${HMDP_SECKILL_ORDER_OUTBOX_CLEANUP_BATCH_SIZE:1000}
+          max-batches-per-run: ${HMDP_SECKILL_ORDER_OUTBOX_CLEANUP_MAX_BATCHES:10}
+          initial-delay-ms: ${HMDP_SECKILL_ORDER_OUTBOX_CLEANUP_INITIAL_DELAY_MS:60000}
+          fixed-delay-ms: ${HMDP_SECKILL_ORDER_OUTBOX_CLEANUP_FIXED_DELAY_MS:3600000}
       handoff:
         batch-size: ${HMDP_SECKILL_ORDER_HANDOFF_BATCH_SIZE:100}
         idle-poll-ms: ${HMDP_SECKILL_ORDER_HANDOFF_IDLE_POLL_MS:20}
