@@ -6,6 +6,7 @@ import com.hmdp.cache.ShopBloomFilter;
 import com.hmdp.cache.ShopLocalCache;
 import com.hmdp.entity.Shop;
 import com.hmdp.service.IShopCacheService;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import static com.hmdp.utils.RedisConstants.LOCK_SHOP_KEY;
 
 /** Shop read path: Caffeine -> Bloom -> Redis/null marker -> Redisson DCL -> MySQL. */
 @Service
+@Slf4j
 public class ShopCacheServiceImpl implements IShopCacheService {
 
     private final ShopLocalCache localCache;
@@ -172,9 +174,21 @@ public class ShopCacheServiceImpl implements IShopCacheService {
     * 为null表示Redis也没命中,不知道数据库里是否有该数据,后续继续查找MySQL
     * */
     private CacheLookup readRedis(Long shopId) {
-        String json = stringRedisTemplate.opsForValue().get(CACHE_SHOP_KEY + shopId);
+        String key = CACHE_SHOP_KEY + shopId;
+        String json = stringRedisTemplate.opsForValue().get(key);
         if (StrUtil.isNotBlank(json)) {
-            return CacheLookup.hit(JSONUtil.toBean(json, Shop.class));
+            try {
+                Shop shop = JSONUtil.toBean(json, Shop.class);
+                if (shop != null && shopId.equals(shop.getId())) {
+                    return CacheLookup.hit(shop);
+                }
+                log.warn("删除无效店铺缓存，shopId={}，cachedId={}",
+                        shopId, shop == null ? null : shop.getId());
+            } catch (RuntimeException e) {
+                log.warn("删除无法解析的店铺缓存，shopId={}", shopId, e);
+            }
+            stringRedisTemplate.delete(key);
+            return CacheLookup.miss();
         }
         return json == null ? CacheLookup.miss() : CacheLookup.nullMarker();
     }

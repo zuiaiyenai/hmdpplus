@@ -82,6 +82,24 @@ class ShopCacheServiceImplTest {
     }
 
     @Test
+    void invalidRedisPayloadIsDeletedAndRebuiltFromDatabase() throws InterruptedException {
+        Shop expected = shop();
+        Mockito.when(valueOperations.get("cache:shop:2"))
+                .thenReturn("{}")
+                .thenReturn(null);
+        Mockito.when(lock.tryLock(500L, 10_000L, TimeUnit.MILLISECONDS)).thenReturn(true);
+        Mockito.when(lock.isHeldByCurrentThread()).thenReturn(true);
+        Mockito.when(databaseFallback.apply(2L)).thenReturn(expected);
+
+        assertSame(expected, cacheService.queryById(2L, databaseFallback));
+
+        Mockito.verify(redisTemplate).delete("cache:shop:2");
+        Mockito.verify(valueOperations).set(
+                "cache:shop:2", JSONUtil.toJsonStr(expected), 30L, TimeUnit.MINUTES);
+        Mockito.verify(lock).unlock();
+    }
+
+    @Test
     void cachedNullSkipsLockAndDatabase() {
         Mockito.when(valueOperations.get("cache:shop:2")).thenReturn("");
 

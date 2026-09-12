@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.LOGIN_USER_KEY;
+import static com.hmdp.utils.RedisConstants.LOGIN_USER_INDEX_KEY;
 import static com.hmdp.utils.RedisConstants.LOGIN_USER_TTL;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -47,6 +48,12 @@ class RefreshTokenInterceptorTest {
         assertEquals(7L, UserHolder.getUser().getId());
         assertEquals("user_test", UserHolder.getUser().getNickName());
         verify(redisTemplate).expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
+        verify(redisTemplate).execute(
+                any(),
+                eq(java.util.Collections.singletonList(LOGIN_USER_INDEX_KEY + 7L)),
+                eq(token),
+                eq(String.valueOf(TimeUnit.MINUTES.toMillis(LOGIN_USER_TTL)))
+        );
 
         interceptor.afterCompletion(request, response, new Object(), null);
         assertNull(UserHolder.getUser());

@@ -20,8 +20,11 @@ import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +51,7 @@ import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
 @Slf4j
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IUserService {
+    private static final DefaultRedisScript<Long> COMPARE_DELETE_SCRIPT = loadCompareDeleteScript();
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -61,6 +65,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (RegexUtils.isPhoneInvalid(phone)) {
             // 2.如果不符合，返回错误信息
             return Result.fail("手机号格式错误！");
+        }
+        Boolean firstRequest = stringRedisTemplate.opsForValue().setIfAbsent(
+                LOGIN_CODE_COOLDOWN_KEY + phone,
+                "1",
+                LOGIN_CODE_COOLDOWN_SECONDS,
+                TimeUnit.SECONDS
+        );
+        if (!Boolean.TRUE.equals(firstRequest)) {
+            return Result.fail("验证码发送过于频繁，请稍后再试");
         }
         // 3.符合，生成验证码
         String code = RandomUtil.randomNumbers(6);
@@ -330,7 +343,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             return Result.ok();
         }
         stringRedisTemplate.delete(LOGIN_USER_KEY + token);
+        UserDTO currentUser = UserHolder.getUser();
+        if (currentUser != null && currentUser.getId() != null) {
+            stringRedisTemplate.execute(
+                    COMPARE_DELETE_SCRIPT,
+                    java.util.Collections.singletonList(LOGIN_USER_INDEX_KEY + currentUser.getId()),
+                    token
+            );
+        }
         return Result.ok();
+    }
+
+    private static DefaultRedisScript<Long> loadCompareDeleteScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/compare_delete.lua")));
+        script.setResultType(Long.class);
+        return script;
     }
 
     int countConsecutiveSignDays(Long userId, LocalDate date) {

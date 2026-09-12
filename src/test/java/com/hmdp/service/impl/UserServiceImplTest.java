@@ -66,6 +66,13 @@ class UserServiceImplTest {
 
     @Test
     void shouldStoreVerificationCodeWithTwoMinuteTtl() {
+        when(valueOperations.setIfAbsent(
+                LOGIN_CODE_COOLDOWN_KEY + PHONE,
+                "1",
+                LOGIN_CODE_COOLDOWN_SECONDS,
+                TimeUnit.SECONDS
+        )).thenReturn(true);
+
         Result result = userService.sendCode(PHONE);
 
         assertTrue(result.getSuccess());
@@ -127,6 +134,27 @@ class UserServiceImplTest {
                 USER_SIGN_KEY + "7:" + today.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")),
                 today.getDayOfMonth() - 1,
                 true
+        );
+    }
+
+    @Test
+    void shouldRejectVerificationCodeRequestsDuringCooldown() {
+        when(valueOperations.setIfAbsent(
+                LOGIN_CODE_COOLDOWN_KEY + PHONE,
+                "1",
+                LOGIN_CODE_COOLDOWN_SECONDS,
+                TimeUnit.SECONDS
+        )).thenReturn(false);
+
+        Result result = userService.sendCode(PHONE);
+
+        assertFalse(result.getSuccess());
+        assertEquals("验证码发送过于频繁，请稍后再试", result.getErrorMsg());
+        verify(valueOperations, never()).set(
+                startsWith(LOGIN_CODE_KEY),
+                anyString(),
+                anyLong(),
+                any(TimeUnit.class)
         );
     }
 
