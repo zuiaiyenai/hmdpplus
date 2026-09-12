@@ -3,6 +3,7 @@
 > 审计日期：2026-09-12  
 > 目标仓库：`yyx758/hmdp-plus`，`master@191e3a2a978901612adfb391b30339d76aea8109`（2026-08-31T14:42:52+08:00）  
 > 我的仓库：`zuiaiyenai/hmdpplus`，`feature/hmdp-plus-migration@dfc2f1f23d03c4a5d8586a4643e345e22b6b93c5`（初始快照）  
+> 最终实现快照：`feature/hmdp-plus-migration@4558bba`（最终文档提交前的代码快照）
 > 证据口径：代码/配置存在不等于真实依赖、故障、性能或生产验证通过。
 
 ## Target Gap Summary
@@ -20,6 +21,8 @@
 | DEFECTIVE | 0 |
 
 初始真实功能对齐率：**83.3%**。运行资格不并入静态功能完成率，单独列为 `NOT VERIFIED`。
+
+最终复审仍按相同 159 项逐行计算：`MATCHED 108`、`EQUIVALENT 13`、`BETTER 22`、`PARTIAL 7`、`MISSING 0`、`NOT VERIFIED 9`、`DEFECTIVE 0`，最终证据加权对齐率为 **92.1%**。下表状态已更新为最终复审结果；初始统计保留用于前后对照。
 
 ## 完整功能矩阵
 
@@ -104,7 +107,7 @@
 | Outbox 指数退避 | 有 | 有 | MATCHED | Relay | Relay | 无 | 否 | P0 |
 | Outbox 行租约 | 有 | 有 | MATCHED | Mapper/Relay | Mapper/Relay | 无 | 否 | P0 |
 | Outbox SENT 重查 | 有 | 有 | MATCHED | sent recheck | sent recheck | 无 | 否 | P0 |
-| Outbox 清理 | 无明确归档清理闭环 | 无明确归档清理闭环 | PARTIAL | 状态保留 | 状态保留 | 历史表会增长 | 是 | P1 |
+| Outbox 清理 | 无明确归档清理闭环 | 仅删除超期 COMPLETED，分批且有单轮上限 | BETTER | 状态保留 | `SeckillOrderOutboxCleanupJob` + V4 索引 | 无 | 否 | P1 |
 | Outbox dead record | DLT/失败状态 | DLT/失败状态 | EQUIVALENT | Kafka DLT | Kafka DLT + quarantine | 无 | 否 | P0 |
 | Kafka Topic 持久化 | Broker 默认磁盘日志 | Broker 默认磁盘日志 | MATCHED | Compose Kafka | Compose Kafka | 无 | 否 | P1 |
 | DLT | 有 | 有 | MATCHED | DLT topic | DLT topic | 无 | 否 | P0 |
@@ -122,10 +125,10 @@
 | 启动库存恢复 | Initializer | Initializer | MATCHED | StockInitializer | StockInitializer | 无 | 否 | P0 |
 | 定时全量对账 | 有 | 有 | MATCHED | ReconciliationService | 同类 | 无 | 否 | P1 |
 | MySQL 故障 Handoff 保留 | 设计存在 | 设计存在 | NOT VERIFIED | Handoff | Handoff | 缺真实停机演练 | 是 | P0 |
-| Redis 重启恢复 | Sentinel/初始化/对账 | 有初始化/对账，缺本地 Sentinel 栈 | PARTIAL | Sentinel Compose | Sentinel profile only | 缺可运行 Sentinel Compose | 是 | P1 |
+| Redis 重启恢复 | Sentinel/初始化/对账 | Sentinel 编排 + 初始化 + 对账 | MATCHED | Sentinel Compose | 1 主 2 从 + 3 Sentinel Compose | 实际切换演练另列未验证 | 否 | P1 |
 | Redis 数据丢失恢复 | 重建元数据/投影 | 重建元数据/投影 | MATCHED | Synchronizer | Synchronizer | 无 | 否 | P0 |
 | 单 Redis Compose | 有 | 有 | MATCHED | compose 变体 | `compose.yaml` | 无 | 否 | P1 |
-| Redis Sentinel Compose | 3 节点 + 3 Sentinel | 仅 profile 配置 | MISSING | Docker configs/Compose | `application-redis-sentinel.yaml` | 缺节点与 Sentinel 编排 | 是 | P1 |
+| Redis Sentinel Compose | 3 节点 + 3 Sentinel | 3 节点 + 3 Sentinel | MATCHED | Docker configs/Compose | `compose.yaml` + `docker/redis` | 无静态能力缺口 | 否 | P1 |
 | 订阅 | 有 | 有 | MATCHED | SubscriptionService | 同类 | 无 | 否 | P2 |
 | 取消订阅 | 有 | 有 | MATCHED | unsubscribe | unsubscribe | 无 | 否 | P2 |
 | 开场提醒 | 有 | 有 | MATCHED | ReminderService | 同类 | 无 | 否 | P2 |
@@ -160,11 +163,11 @@
 | 订单复合索引 | 有 | 有 | MATCHED | V8 | V3 合并迁移 | 无 | 否 | P1 |
 | Outbox 索引 | 有 | 有 | MATCHED | V5-V8 | V2/V3 合并迁移 | 无 | 否 | P0 |
 | Flyway | V2-V9 拆分 | V2-V3 合并 | EQUIVALENT | 细粒度历史 | 等价 schema 演进 | 不应复制已执行版本号 | 否 | P0 |
-| EXPLAIN 慢查询验证 | 未保存完整证据 | 未保存完整证据 | NOT VERIFIED | 需真实数据 | 需真实数据 | 缺执行计划归档 | 是 | P1 |
-| Actuator | 无 | 无 | MISSING | 目标未提供 | 我的未提供 | 为可观测目标应新增 | 是 | P1 |
-| Prometheus | 无 | 无 | MISSING | 目标未提供 | 我的未提供 | 为可观测目标应新增 | 是 | P1 |
-| 业务 Metrics | 少量日志 | 少量日志 | MISSING | 无成熟实现 | 无成熟实现 | 缺 backlog/relay/consumer 指标 | 是 | P1 |
-| Trace ID/MDC | 无统一链路 | 无统一链路 | MISSING | 无 | 无 | 缺请求关联 ID | 是 | P1 |
+| EXPLAIN 慢查询验证 | 未保存完整证据 | 本轮验证 Outbox 清理/投递及订单唯一性查询 | BETTER | 需真实数据 | MySQL 5.7 EXPLAIN 使用 cleanup/dispatch/order 索引 | 大数据量分布仍需生产前复核 | 否 | P1 |
+| Actuator | 无 | health/info/metrics | BETTER | 目标未提供 | `spring-boot-starter-actuator` | 无 | 否 | P1 |
+| Prometheus | 无 | `/actuator/prometheus` | BETTER | 目标未提供 | Micrometer Prometheus registry | 无 | 否 | P1 |
+| 业务 Metrics | 少量日志 | backlog、准入倍率、秒杀结果指标 | BETTER | 无成熟实现 | `MetricsConfig`/`SeckillMetricsAspect` | 告警规则尚未部署 | 否 | P1 |
+| Trace ID/MDC | 无统一链路 | 请求 Trace ID + MDC 清理 | BETTER | 无 | `RequestTraceFilter` | 无 | 否 | P1 |
 | 结构化日志 | 普通文本日志 | 普通文本日志 | PARTIAL | Logback 默认 | Logback 默认 | 缺统一字段 | 可选 | P2 |
 | JMeter 场景 | 有 | 有 | MATCHED | `load-tests/jmeter` | 同目录 | 无 | 否 | P1 |
 | 缓存基准脚本 | 有 | 有 | MATCHED | benchmark script | 同脚本 | 无 | 否 | P1 |
@@ -172,17 +175,17 @@
 | Redis 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P1 |
 | MySQL 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P0 |
 | Kafka 故障注入 | 有方案 | 有方案 | NOT VERIFIED | Compose stop/start | 文档方案 | 本机无 Docker | 是 | P0 |
-| GitHub Actions CI | 无 | 无 | MISSING | 目标缺失 | 我的也缺失 | 用户完成标准要求 | 是 | P1 |
-| Maven 自动构建 | 手工 | 手工 | PARTIAL | 可运行 Maven | 可运行 Maven | 缺 push CI | 是 | P1 |
-| Dockerfile | 有 | 无 | MISSING | 多阶段 Java 8 镜像 | 无 | 缺应用镜像 | 是 | P1 |
-| App Compose | 有 app service | 仅依赖服务 | MISSING | app+依赖 | mysql+redis+kafka | 缺整栈一键启动 | 是 | P1 |
+| GitHub Actions CI | 无 | MySQL/Redis/Kafka services + Java 8 Maven test | BETTER | 目标缺失 | `.github/workflows/ci.yml` | 未在本分支远程触发 | 否 | P1 |
+| Maven 自动构建 | 手工 | push/PR 自动测试 | BETTER | 可运行 Maven | GitHub Actions | 无代码能力缺口 | 否 | P1 |
+| Dockerfile | 有 | 有 | MATCHED | 多阶段 Java 8 镜像 | 多阶段 Java 8 镜像 | 无 | 否 | P1 |
+| App Compose | 有 app service | app + MySQL + Sentinel Redis + Kafka | MATCHED | app+依赖 | 完整依赖与健康顺序 | 无静态能力缺口 | 否 | P1 |
 | MySQL Compose | 有 | 有 | MATCHED | MySQL 5.7 | MySQL 5.7 | 无 | 否 | P1 |
 | Redis Compose | 有 | 有 | MATCHED | Redis 6.2 | Redis 6.2 | 无 | 否 | P1 |
 | Kafka Compose | 有 | 有 | MATCHED | Kafka 3.7.1 | Kafka 3.7.1 | 无 | 否 | P1 |
-| Healthcheck | 各服务有 | 各依赖有 | PARTIAL | app 依赖链 | 依赖 healthcheck | 缺应用 healthcheck | 是 | P1 |
-| 本轮 Maven 全量测试 | 155 tests/6 环境错误 | 167 tests/6 环境错误 | NOT VERIFIED | Redis 6380 不可用 | 外部依赖未满足 | 需固定测试环境 | 是 | P0 |
-| 真实 MySQL | 当前 3306 有监听 | 当前 3306 有监听 | NOT VERIFIED | 未带凭据核验 | 未带凭据核验 | 不能把监听当业务验证 | 是 | P0 |
-| 真实 Redis | 当前 6379 有监听 | 当前 6379 有监听 | NOT VERIFIED | 目标默认 6380 | 我的默认 6379 | 需认证 PING/Lua | 是 | P0 |
+| Healthcheck | 各服务有 | app 与全部依赖均有 | MATCHED | app 依赖链 | Compose healthcheck/depends_on | 无静态能力缺口 | 否 | P1 |
+| 本轮 Maven 全量测试 | 固定目标源码未重跑 | 175 tests 全绿 | MATCHED | 历史目标测试证据 | MySQL/Redis 真实依赖回归 | Kafka 由独立 E2E 项约束 | 否 | P0 |
+| 真实 MySQL | 固定目标源码未重跑 | MySQL 5.7.26 已验证 | BETTER | 仅源码证据 | Flyway V4、Mapper 集成测试、EXPLAIN | 非生产数据规模 | 否 | P0 |
+| 真实 Redis | 固定目标源码未重跑 | 真实 Redis Lua 并发测试通过 | BETTER | 仅源码证据 | 40 并发一人一单/库存/Token 原子性 | Sentinel 切换另列未验证 | 否 | P0 |
 | 生产资格 | 未证明 | 未证明 | NOT VERIFIED | 无生产证据 | 无生产证据 | 需要长期运行证据 | 否 | P3 |
 
 ## 双方秒杀主链
